@@ -1,20 +1,34 @@
-name: Trigger Webhook
+name: "Release Health Check"
 
 on:
-  push:
-    branches:
-      - main
+  # 매 2시간마다 수행
+  schedule:
+    - cron: "0 */2 * * *"
+  workflow_dispatch:
+
 
 jobs:
-  call_webhook:
-    runs-on: ubuntu-latest
+  healthcheck:
+    # ubuntu 버전 지정
+    runs-on: ubuntu-22.04
     steps:
-      # 1. Webhook 호출
-      - name: Call Webhook URL
+      # 릴리즈 서버 헬스 체크 진행
+      - name: Release API Health Check
+        uses: jtalk/url-health-check-action@v3
+        with:
+          url: ${{ secrets.RELEASE_URI }}
+          max-attempts: 3 # 시도 횟수
+          retry-delay: 1s # 시도 간격
+
+      # 헬스 체크 결과 슬랙으로 연동
+      - name: action-slack
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          author_name: Health-Check
+          fields: repo,message,commit,action,eventName,ref,workflow,job,took # 보낼 정보들
+          github_token: ${{ secrets.ACCESS_TOKEN_GIT }}
+
         env:
-          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }} # Webhook URL을 GitHub Secrets로 설정
-        run: |
-          curl -X POST \
-            -H "Content-Type: application/json" \
-            -d '{"message": "GitHub Actions Triggered", "branch": "${{ github.ref_name }}"}' \
-            $WEBHOOK_URL
+          SLACK_WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }} # required
+        if: always() # 스크립트 성공/실패 여부에 상관없이 항상 수행되도록 설정
